@@ -1,0 +1,19 @@
+
+---
+
+- name: Create a domain, projects, users, and roles
+  hosts: controller
+  remote_user: "jibin"
+  become: true  
+ 
+  tasks:
+
+
+     
+    - name: Create a volume group 
+      lvg:
+        vg: cinder-volumes
+        pvs: /dev/mmcblk0 
+        state: absent
+  
+ 

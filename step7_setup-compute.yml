@@ -1,0 +1,56 @@
+- name:  Get passwords
+  hosts: compute
+  remote_user: "jibin"
+  tasks:
+  
+    - fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'" 
+      when: vault_token is not defined
+
+     
+    - name: Retrieving nova user pass  from vault
+
+      set_fact: NOVA_PASS="{{ lookup('hashi_vault', 'secret=kv/openstack-deploy/NOVA_PASS:value auth_method=token token={{vault_token}} url=https://192.168.9.1:8200') }}"
+    - name: Retrieving NEUTRON_PASS  from vault
+
+      set_fact: NEUTRON_PASS="{{ lookup('hashi_vault', 'secret=kv/openstack-deploy/NEUTRON_PASS:value auth_method=token token={{vault_token}} url=https://192.168.9.1:8200') }}"
+
+    - name: Retrieving PLACEMENT_PASS  from vault
+
+      set_fact: PLACEMENT_PASS="{{ lookup('hashi_vault', 'secret=kv/openstack-deploy/PLACEMENT_PASS:value auth_method=token token={{vault_token}} url=https://192.168.9.1:8200') }}"
+    
+    - name: Retrieving RABBIT_PASS  user pass  from vault
+
+      set_fact: RABBIT_PASS="{{ lookup('hashi_vault', 'secret=kv/openstack-deploy/RABBIT_PASS:value auth_method=token token={{vault_token}} url=https://192.168.9.1:8200') }}"
+    - name: Retrieving METADATA_SECRET   from vault
+
+      set_fact: METADATA_SECRET="{{ lookup('hashi_vault', 'secret=kv/openstack-deploy/METADATA_SECRET:value auth_method=token token={{vault_token}} url=https://192.168.9.1:8200') }}"
+
+ 
+ 
+- name: Install and configure nova compute components 
+  hosts: compute
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install nova packages
+      apt:
+        name: 
+          - nova-compute
+        state: present 
+      
+
+    - name: Configure   /etc/nova/nova.conf
+      template:
+        src: "{{ playbook_dir }}/configs/templates/nova_compute.conf.j2"
+        dest: "/etc/nova/nova.conf"
+        owner:  nova 
+        mode: '0640'
+
+    - name: Restart the Compute services
+      systemd:
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+        name: "{{item}}"
+      with_items:
+        - nova-compute

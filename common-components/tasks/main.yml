@@ -1,0 +1,58 @@
+---
+
+# - import_tasks: setup_network_interfaces.yml
+
+
+- name: Install NTP  (chrony )
+  apt:
+    name: chrony
+    state: present
+
+- name: Start Chrony NTP
+  systemd:
+    state: started
+    enabled: yes
+    daemon_reload: yes
+    name: chrony
+
+# - name: install ubuntu cloud keyring
+#   apt:
+#     pkg: ubuntu-cloud-keyring
+#     state: present
+
+# - name:  Enable the repository for Ubuntu Cloud Archive
+#   apt_repository:
+#     repo: "deb http://ubuntu-cloud.archive.canonical.com/ubuntu focal-updates/victoria main"
+#     update_cache: yes
+
+
+- name: Enable the repository for Ubuntu Cloud Archive
+  command:  add-apt-repository -y cloud-archive:victoria
+
+- name: Update apt-get repo and cache
+  apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+
+
+- name: Check if a reboot is needed for  and Ubuntu boxes
+  register: reboot_required_file
+  stat: path=/var/run/reboot-required get_md5=no
+
+
+
+- name: Reboot the Ubuntu server
+  reboot:
+    msg: "Reboot initiated by Ansible due to kernel updates"
+    connect_timeout: 5
+    reboot_timeout: 300
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: uptime
+  when: reboot_required_file.stat.exists
+
+- name: Install openstack client   
+  apt:
+    name: python3-openstackclient
+    state: present
+
+
+ 

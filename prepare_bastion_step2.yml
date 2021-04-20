@@ -1,0 +1,17 @@
+- name: Distribute CA to controller and compute
+  hosts: controller, compute
+  become: true 
+  remote_user: "jibin"
+  gather_facts: no
+  tasks:
+    - name: add CA to /etc/ssl/certs/ca-certificates
+      copy: 
+        src: "/etc/certs/ca.crt"  
+        dest: "/usr/local/share/ca-certificates/ca.crt"
+        owner: root
+        group: root
+        mode: '0640' 
+
+    - name: reload CA
+      command: update-ca-certificates
+

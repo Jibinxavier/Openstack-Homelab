@@ -1,0 +1,167 @@
+
+---
+ 
+- name: Setup controller network
+  hosts: controller
+  remote_user: "jibin"
+  become: true
+  tasks: 
+    - name: Copy controller network interface configuration
+      # network aliasing doest work
+      copy:
+        src: "{{playbook_dir}}/configs/00-controller-installer-config.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/netplan/00-installer-config.yaml"
+        owner: root
+        group: root
+        mode: '0644' 
+      
+      
+    - name: netplan apply 
+      command: netplan --debug apply 
+
+    - name: Test if interface is up - 10.0.0.11,  10.0.0.31  
+      command: ping -w 1 {{item}}
+      with_items:
+        - 10.0.0.11 
+        - 10.0.0.31
+    
+    - name: Add ips to host file
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^{{item}}' # only add if it doesnt exi
+        line: '{{item}}'
+      with_items:
+        - '10.0.0.11 controller'
+        - '10.0.0.31 compute1'
+        - '10.0.0.41 block1'
+        - '10.0.0.51 object1'
+
+    
+
+- name: Install common components
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  roles:
+    - common-components
+
+- name: SQL database for Ubuntu 
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install mariadb and pymysql
+      apt:
+        name: 
+          - mariadb-server
+          - python3-pymysql
+        state: present 
+
+    - name: Copy mysqld configuration
+       
+      copy:
+        src: "{{playbook_dir}}/configs/99-openstack.cnf" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/mysql/mariadb.conf.d/99-openstack.cnf"
+        owner: root
+        group: root
+        mode: '0644' 
+
+    - name: Start mysql 
+      systemd:
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+        name: mysql
+
+
+- name: Message queue
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install rabbitmq
+      apt:
+        name: 
+          - rabbitmq-server 
+        state: present 
+    - name: Check if openstack user exists in rabbitmq
+      shell: 'rabbitmqctl list_users |grep openstack'
+      register: openstack_users
+      changed_when: false
+      ignore_errors: true
+      
+    - name: Get root password for rabbitmq
+      pause:
+        prompt: "Enter a pass"
+        echo: no
+      register: result
+      when:  openstack_users.stdout == ""
+  
+  
+    - name: Add the openstack user to  rabbitmq 
+      rabbitmq_user:
+        user: openstack
+        password: "{{ result.user_input }}"
+        vhost: /
+        configure_priv: .*
+        read_priv: .*
+        write_priv: .*
+        state: present
+      no_log: true
+      when:  openstack_users.stdout == ""
+
+ 
+- name: Memcached for Ubuntu
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install memcached  python-memcache
+      apt:
+        name: 
+          - memcached
+          - python3-memcache
+        state: present  
+    - name: Configure the service to use the management IP address of the controller node
+       
+      copy:
+        src: "{{playbook_dir}}/configs/memcached.conf"  
+        dest: "/etc/memcached.conf"
+        owner: root
+        group: root
+        mode: '0644'  
+    
+    - name: Restart memcached 
+      systemd:
+        state: restarted
+        enabled: yes 
+        name: memcached
+
+
+- name:  Etcd for Ubuntu
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install etcd
+      apt:
+        name: 
+          - etcd
+        state: present 
+
+    - name: Copy etcd configuration
+       
+      copy:
+        src: "{{playbook_dir}}/configs/etcd_config.ini"  
+        dest: "/etc/default/etcd"
+        owner: root
+        group: root
+        mode: '0644'  
+
+
+    - name: Start etcd 
+      systemd:
+        state: started
+        enabled: yes
+        daemon_reload: yes
+        name: etcd

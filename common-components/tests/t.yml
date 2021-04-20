@@ -1,0 +1,26 @@
+
+- name: SQL database for Ubuntu 
+  hosts: localhost
+ 
+ 
+  tasks: 
+ 
+    - name: Run mysql secure installation 
+      pause:
+        prompt: "Do you want to run secure installation  (yes/no)?"
+      register: my_pause
+      delegate_to: localhost
+    - name: Get root password for mariadb
+      pause:
+      prompt: "Enter a pass"
+      echo: no
+      register: pass
+    # - name: Run mysql secure installation 
+    #   pause:
+    #     prompt: "Do you want to run secure installation  (yes/no)?"
+    #   register: my_pause
+    #   delegate_to: localhost  
+  
+    # - name: Execute mysql secure installation
+      
+    #   when: hostvars['localhost'].mypause.user_input | bool
