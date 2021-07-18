@@ -1,0 +1,16 @@
+
+network:
+  renderer: networkd
+
+  ethernets:
+   
+    eno1:
+      addresses:  
+        - 10.0.0.32/24 # compute ip, this setup will have compute ip too 
+        - 10.0.0.41/24 # block storage
+      dhcp4: true
+      nameservers: 
+        addresses: [8.8.8.8]
+    
+  version: 2
+

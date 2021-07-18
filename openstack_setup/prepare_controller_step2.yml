@@ -1,0 +1,190 @@
+--- 
+###
+### IMPORTANT: This playbook will always run create a new CA and vault cert each time
+###
+
+
+
+
+- name: Create CA, and signed Certs 
+  hosts: localhost 
+  tasks: 
+    - name: Creates certs directory 
+      file:
+        path: "{{playbook_dir}}/configs/certs"
+        state: directory  
+
+    # more details https://stackoverflow.com/questions/10175812/how-to-create-a-self-signed-certificate-with-openssl/41366949#41366949 
+    # and https://stackoverflow.com/questions/56350113/ansible-create-a-self-signed-ssl-certificate-and-key
+    # MAY need this https://superuser.com/questions/437330/how-do-you-add-a-certificate-authority-ca-to-ubuntu
+    - name: CA- Generate an OpenSSL private key with the default values (4096 bits, RSA)
+      openssl_privatekey:
+        path: "{{playbook_dir}}/configs/certs/ca.pem"
+        force: true
+    - name:  CA- Generate an OpenSSL Certificate Signing Request  
+      openssl_csr:
+        path:  "{{playbook_dir}}/configs/certs/ca.csr"
+        privatekey_path: "{{playbook_dir}}/configs/certs/ca.pem"
+        common_name: NUC_CA
+        state_or_province_name: Dublin
+        basicConstraints: 'CA:TRUE'
+        key_usage:
+          - 'Certificate Sign'
+          - 'CRL Sign'
+      
+        force: true
+    - name: CA - Generate a Self Signed CA OpenSSL certificate
+      openssl_certificate:
+        path:  "{{playbook_dir}}/configs/certs/ca.crt"
+        privatekey_path: "{{playbook_dir}}/configs/certs/ca.pem"
+        csr_path:  "{{playbook_dir}}/configs/certs/ca.csr"
+        provider: selfsigned
+        
+        force: true
+    - name: Vault- Generate an OpenSSL private key(4096 bits, RSA)
+      openssl_privatekey:
+        path: "{{playbook_dir}}/configs/certs/vault.pem"
+        force: true
+        
+
+    - name:  Vault- Generate an OpenSSL Certificate Signing Request  
+      vars: 
+        controller_ip: "{{ groups['controller'] | map('extract', hostvars, ['ansible_host']) | list }}"
+        subj_alt_name: "{{ ['IP:'] | product( controller_ip) | map('join', '') |  join(',')  }}"
+      openssl_csr:
+        path: "{{playbook_dir}}/configs/certs/vault.csr"
+        privatekey_path: "{{playbook_dir}}/configs/certs/vault.pem"
+        common_name: vault 
+        subject_alt_name: "IP:127.0.0.1,IP:192.168.9.1,{{subj_alt_name}}"
+        basicConstraints: 'CA:FALSE'
+        key_usage:
+          - 'Digital Signature'
+          - 'Key Encipherment'
+        extended_key_usage:
+          - 'TLS Web Server Authentication'
+          - 'TLS Web Client Authentication'
+        force: true
+        
+    - name: Vault - Generate a cert using own CA
+      openssl_certificate:
+        path: "{{playbook_dir}}/configs/certs/vault.crt"
+        csr_path: "{{playbook_dir}}/configs/certs/vault.csr"
+        ownca_path:   "{{playbook_dir}}/configs/certs/ca.crt"
+        ownca_privatekey_path: "{{playbook_dir}}/configs/certs/ca.pem"
+        provider: ownca 
+        force: true
+   
+    - name: verify certs 
+      shell: "openssl verify -CAfile {{playbook_dir}}/configs/certs/ca.crt {{playbook_dir}}/configs/certs/vault.crt "
+        
+
+
+
+- name: Distribute CA to controller and compute
+  hosts: controller, compute
+  become: true 
+  gather_facts: no
+  tasks:
+    - name: add CA to /etc/ssl/certs/ca-certificates
+      copy: 
+        src: "{{playbook_dir}}/configs/certs/ca.crt"  
+        dest: "/usr/local/share/ca-certificates/ca.crt"
+        owner: root
+        group: root
+        mode: '0640' 
+      tags:
+        - upload_ca  
+    - name: reload CA
+      command: update-ca-certificates
+      tags:
+        - upload_ca  
+
+  
+ 
+- name: Stand up vault 
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  vars:
+    vault_binary_url: https://releases.hashicorp.com/vault/1.7.0/vault_1.7.0_linux_amd64.zip
+  tasks:
+    - name: Create group
+      group:
+        name: vault
+        state: present
+
+    - name: Create system user "vault"  
+      user:
+        name: vault 
+        group: vault 
+        state: present
+        system: yes
+
+    - name: Install unzip
+      apt:
+        name: 
+          - unzip
+        state: present
+
+    - name: Download and Extract vault   
+      unarchive:
+        src: "{{ vault_binary_url }}"
+        dest: /usr/local/bin/
+        remote_src: yes
+    - name: Install pip 
+      apt:
+        name:  python3-pip
+        state: present  
+    
+    - name: Install hvac using pip
+      pip:
+        name: 
+          - hvac 
+    
+
+    - name: Creates vault directory 
+      file:
+        path: "{{item}}"
+        state: directory  
+        owner: vault
+        group: vault
+        recurse: yes
+      with_items:
+        - /vault/data
+        - /etc/vault.d/
+
+    - name: Copy vault unit file   
+      copy:
+        src: "{{playbook_dir}}/configs/vault.service"  
+        dest: "/etc/systemd/system/vault.service"
+        owner: root
+        group: root
+        mode: '0644' 
+
+    - name: Copy vault config file   
+      copy:
+        src: "{{playbook_dir}}/configs/vault.hcl"  
+        dest: "/etc/vault.d/vault.hcl"
+        owner: vault
+        group: vault
+        mode: '0644'  
+    - name: Copy vault certs  
+      copy:
+        src: "{{playbook_dir}}/configs/certs/{{item}}"  
+        dest: "/etc/vault.d/{{item}}"
+        owner: vault
+        group: vault
+        mode: '0644' 
+      
+      with_items:
+        - vault.pem
+        - vault.crt 
+
+    - name: Start vault 
+      systemd:
+        state: started
+        daemon_reload: yes
+        enabled: yes
+        name: vault
+
+

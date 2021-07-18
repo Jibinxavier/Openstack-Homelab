@@ -1,0 +1,47 @@
+
+---
+
+- name: Pre-req
+  hosts: controller
+  remote_user: "jibin" 
+  gather_facts: no
+  
+  tasks:
+    # - include_vars:  dir=vars 
+    # - fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'"
+
+    #   when: vault_token is not defined
+
+    - debug: msg="{{hostvars[inventory_hostname][ "ansible_host"]}}"
+
+
+    # - name: Get credentials from Vault 
+    #   uri:
+    #     url: "{{vault_addr}}{{item}}"
+    #     method: GET
+    #     headers:
+    #       X-Vault-Token: "{{vault_token}}"
+
+    #   with_items:
+    #     - /v1/kv/openstack-deploy/NEUTRON_DBPASS 
+    #     - /v1/kv/openstack-deploy/NOVA_DBPASS
+    #   register: output
+    
+    # - name: Set the  
+    #   set_fact: 
+    #     NEUTRON_DBPASS: "{{output.results[0].json.data.value}}"
+    #     NOVA_DBPASS: "{{output.results[1].json.data.value}}"
+
+    # - debug: msg="{{NEUTRON_DBPASS}} {{NOVA_DBPASS}} "
+
+    # - name: GET to consul
+    #   uri:
+    #     url: "{{vault_addr}}/v1/kv/openstack-deploy/NEUTRON_DBPASS "
+    #     method: GET
+    #     headers:
+    #       X-Vault-Token: "{{vault_token}}"
+
+  
+    #   register: sddd
+
+    # - debug: msg="{{sddd}}"

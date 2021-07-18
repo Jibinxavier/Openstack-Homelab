@@ -1,0 +1,225 @@
+--- 
+
+- name: Prepare the Controller
+  hosts: controller
+  gather_facts: no
+  become: true 
+  remote_user: "jibin"
+  
+  pre_tasks:
+    - name: Install pip
+      raw:  apt install -y python3-pip
+      changed_when: False 
+
+
+- name: Pre-req
+  hosts: controller
+  remote_user: "jibin"
+  become: true # needs become true for retrieving secrets otherwise" unable to get local issuer certificate "
+  tasks:
+    - include_vars:  dir=vars 
+
+    - name: Fail if vault_token not set
+      fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'" 
+      when: vault_token is not defined 
+
+    - name: Retrieving secrets  from vault
+      uri:
+        url: "{{vault_addr}}{{item}}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{vault_token}}" 
+      with_items:
+        - /v1/kv/openstack-deploy/MYSQL_PASS   
+        - /v1/kv/openstack-deploy/PLACEMENT_PASS 
+        - /v1/kv/openstack-deploy/KEYSTONE_ADMIN_PASS 
+        - /v1/kv/openstack-deploy/PLACEMENT_DBPASS
+      register: output
+
+    - name: Set MYSQL_PASS,  PLACEMENT_PASS, KEYSTONE_ADMIN_PASS 
+      set_fact: 
+        MYSQL_PASS: "{{output.results[0].json.data.value}}"  
+        PLACEMENT_PASS:   "{{output.results[1].json.data.value}}" 
+        KEYSTONE_ADMIN_PASS: "{{output.results[2].json.data.value}}"    
+        PLACEMENT_DBPASS: "{{output.results[3].json.data.value}}" 
+- name:  Setup mysql pre-req for placement system (identity)
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Create a new database with name 'placement'
+      mysql_db:
+        name: placement
+        login_user: root 
+        login_password: "{{MYSQL_PASS}}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock 
+        state: present
+
+      
+ 
+
+    - name: Create placement user with password, grant on placement database
+      mysql_user:
+        state: present
+        name: placement
+        password: "{{PLACEMENT_DBPASS}}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock 
+        login_user: root
+        login_password: "{{MYSQL_PASS}}"
+        host: "{{item}}"
+        priv:  
+          "placement.*:ALL,GRANT" 
+      with_items:
+        - localhost
+        - '%'
+      no_log: true
+- name: Create placement user and it project
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+
+  vars:
+    os_env:
+      OS_USERNAME: admin
+      OS_PASSWORD: "{{KEYSTONE_ADMIN_PASS}}"
+      OS_PROJECT_NAME: admin
+      OS_USER_DOMAIN_NAME: Default
+      OS_PROJECT_DOMAIN_NAME: Default
+      OS_AUTH_URL: http://controller:5000/v3
+      OS_IDENTITY_API_VERSION: 3
+
+  tasks:
+    - name: Create placement user 
+      os_user:
+        state: present
+        name: placement
+        password: "{{PLACEMENT_PASS}}" 
+        domain: default 
+      environment: "{{ os_env }}"
+
+    - name: assign placement admin role 
+      os_user_role: 
+        user: placement
+        role: admin
+        project: service
+      environment: "{{ os_env }}"
+    - name: Create service entity for placement  
+      os_keystone_service: 
+        state: present
+        name: placement
+        service_type: placement
+        description: Placement API
+
+      environment: "{{ os_env }}"
+
+    - name: Create a PUBLIC service endpoint for placement
+      openstack.cloud.endpoint: 
+        service: placement
+        endpoint_interface: public
+        url: http://controller:8778
+        region: RegionOne
+        state: present
+      environment: "{{ os_env }}"
+
+    - name: Create an INTERNAL service endpoint for placement
+      openstack.cloud.endpoint: 
+        service: placement
+        endpoint_interface: internal
+        url: http://controller:8778
+        region: RegionOne
+        state: present
+      environment: "{{ os_env }}"
+
+    - name: Create an ADMIN service endpoint for placement
+      openstack.cloud.endpoint: 
+        service: placement
+        endpoint_interface: admin
+        url: http://controller:8778
+        region: RegionOne
+        state: present
+      environment: "{{ os_env }}"
+- name: Install and configure placement components 
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install placement packages
+      apt:
+        name: 
+          - placement-api 
+          
+    - name: Install  openstack-placement and pymysql
+      pip:
+        name: 
+          - openstack-placement
+          - osc-placement
+          - pymysql
+    - name: Creates directory /etc/placement/
+      file:
+        path: /etc/placement
+        state: directory       
+
+    - name: Configure database, keystone (identity) for placement
+      template:
+        src: "{{ playbook_dir }}/configs/templates/placement.conf.j2"
+        dest: "/etc/placement/placement.conf"
+        mode: '0644'
+
+    - name: Populate the placement database
+      command: placement-manage db sync
+
+
+- name: Finalize installation
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks:
+    - name: Install uwsgi
+      pip:
+        name: 
+          - uwsgi 
+    # will be automatically killed after 45, because of sighup
+    - name: Run the server with the placement WSGI application 
+      shell: >
+          uwsgi -M --http :8778 --wsgi-file /usr/local/bin/placement-api  --processes 2 --threads 10  
+          
+      async: 45
+      poll: 0
+    - name: Curl endpoint to check 
+      uri:
+        url:  http://controller:8778/
+      register: this
+
+
+
+- name: Verify
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  vars:
+    os_env:
+      OS_USERNAME: admin
+      OS_PASSWORD: "{{KEYSTONE_ADMIN_PASS}}"
+      OS_PROJECT_NAME: admin
+      OS_USER_DOMAIN_NAME: Default
+      OS_PROJECT_DOMAIN_NAME: Default
+      OS_AUTH_URL: http://controller:5000/v3
+      OS_IDENTITY_API_VERSION: 3
+
+  tasks:
+    - name:  Perform status checks to make sure everything is in order 
+      command: placement-status upgrade check
+      register: out
+      environment: "{{ os_env }}"
+    - debug:  msg="{{out}}"
+    - name:  List available resource classes and traits
+      command: openstack --os-placement-api-version 1.2 resource class list --sort-column name
+      register: out
+      environment: "{{ os_env }}"
+    - debug:  msg="{{out}}"
+
+    - name:  List available resource classes and traits
+      command: openstack --os-placement-api-version 1.6 trait list --sort-column name
+      register: out
+      environment: "{{ os_env }}"
+    - debug:  msg="{{out}}"

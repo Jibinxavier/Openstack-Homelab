@@ -1,0 +1,144 @@
+--- 
+- name: Pre-req
+  hosts: controller
+  remote_user: "jibin"
+  become: true # needs become true for retrieving secrets otherwise" unable to get local issuer certificate "
+  tasks:
+    - include_vars:  dir=vars 
+
+    - name: Fail if vault_token not set
+      fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'" 
+      when: vault_token is not defined 
+    - name: Retrieving secrets  from vault
+      uri:
+        url: "{{vault_addr}}{{item}}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{vault_token}}"
+
+      with_items:
+        - /v1/kv/openstack-deploy/MYSQL_PASS  
+        - /v1/kv/openstack-deploy/NEUTRON_DBPASS  
+        - /v1/kv/openstack-deploy/NEUTRON_PASS 
+        - /v1/kv/openstack-deploy/RABBIT_PASS 
+        - /v1/kv/openstack-deploy/NOVA_PASS 
+        - /v1/kv/openstack-deploy/METADATA_SECRET
+      register: output
+
+    - name: Set MYSQL_PASS, NEUTRON_DBPASS, NEUTRON_PASS, RABBIT_PASS 
+      set_fact: 
+        MYSQL_PASS: "{{output.results[0].json.data.value}}" 
+        NEUTRON_DBPASS:   "{{output.results[1].json.data.value}}" 
+        NEUTRON_PASS:   "{{output.results[2].json.data.value}}" 
+        RABBIT_PASS: "{{output.results[3].json.data.value}}"    
+        NOVA_PASS: "{{output.results[4].json.data.value}}"
+        METADATA_SECRET:  "{{output.results[5].json.data.value}}"   
+
+####  Networking Option 2: Self-service networks
+# https://docs.openstack.org/neutron/victoria/install/controller-install-option2-ubuntu.html
+  
+
+- name: Install and configure self-serrvice network components
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    # - name: Remove self service packages
+    #   apt:
+    #     name: 
+    #       - neutron-server
+    #       - neutron-plugin-ml2
+    #       - neutron-linuxbridge-agent
+    #       - neutron-l3-agent
+    #       - neutron-dhcp-agent
+    #       - neutron-metadata-agent
+    #     state: absent 
+        
+    - name: Install self service packages
+      apt:
+        name: 
+          - neutron-server
+          - neutron-plugin-ml2
+          - neutron-linuxbridge-agent
+          - neutron-l3-agent
+          - neutron-dhcp-agent
+          - neutron-metadata-agent
+        state: present 
+      
+    - name: Configure the server component on   /etc/neutron/neutron.conf
+      template:
+        src: "{{ playbook_dir }}/configs/templates/neutron.conf.j2"
+        dest: "/etc/neutron/neutron.conf"
+        
+        mode: '0640'
+
+
+    - name: Configure the Modular Layer 2 (ML2) plug-in
+      copy:
+        src: "{{ playbook_dir }}/configs/ml2_conf.ini"
+        dest: "/etc/neutron/plugins/ml2/ml2_conf.ini"
+        
+        mode: '0640'
+
+    - name: Configure the Linux bridge agent
+      copy:
+        src: "{{ playbook_dir }}/configs/linuxbridge_agent.ini"
+        dest: "/etc/neutron/plugins/ml2/linuxbridge_agent.ini"
+        
+        mode: '0640'
+
+    - name: Check if kernel module br_netfilter is loaded  
+      shell:  lsmod | grep br_netfilter
+
+    - name: Configure the layer-3 agent
+      copy:
+        src: "{{ playbook_dir }}/configs/l3_agent.ini"
+        dest: "/etc/neutron/l3_agent.ini"
+        
+
+        mode: '0640'
+    - name: Configure the DHCP agent
+      copy:
+        src: "{{ playbook_dir }}/configs/dhcp_agent.ini"
+        dest: "/etc/neutron/dhcp_agent.ini"
+        
+        mode: '0640'
+
+#https://docs.openstack.org/neutron/victoria/install/controller-install-ubuntu.html#configure-the-metadata-agent
+    - name: Configure the metadata agent
+      template:
+        src: "{{ playbook_dir }}/configs/templates/metadata_agent.ini.j2"
+        dest: "/etc/neutron/metadata_agent.ini"
+        mode: '0640'
+
+
+
+- name: Finalize installation
+
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Populate the database
+      shell: su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+      register: out 
+    
+    - debug:  msg="{{out.stdout}}"
+
+    - name: Restart the Compute services
+      systemd:
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+        name: "{{item}}"
+      with_items:
+        - nova-api
+        - neutron-server 
+        - neutron-linuxbridge-agent
+        - neutron-dhcp-agent
+        - neutron-metadata-agent
+        - neutron-l3-agent
+      tags:
+        - restart_neutron
+
+ 

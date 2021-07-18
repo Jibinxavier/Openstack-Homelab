@@ -1,0 +1,205 @@
+--- 
+- name: Pre-req
+  hosts: controller
+  remote_user: "jibin"
+  become: true # needs become true for retrieving secrets otherwise" unable to get local issuer certificate "
+  tasks:
+    - include_vars:  dir=vars 
+
+    - name: Fail if vault_token not set
+      fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'" 
+      when: vault_token is not defined 
+    - name: Retrieving secrets  from vault
+      uri:
+        url: "{{vault_addr}}{{item}}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{vault_token}}"
+
+      with_items:
+        - /v1/kv/openstack-deploy/MYSQL_PASS  
+        - /v1/kv/openstack-deploy/NOVA_DBPASS  
+        - /v1/kv/openstack-deploy/NOVA_PASS 
+        - /v1/kv/openstack-deploy/KEYSTONE_ADMIN_PASS 
+        - /v1/kv/openstack-deploy/RABBIT_PASS 
+        - /v1/kv/openstack-deploy/PLACEMENT_PASS
+        - /v1/kv/openstack-deploy/METADATA_SECRET
+        - /v1/kv/openstack-deploy/NEUTRON_PASS
+
+      register: output
+
+    - name: Set ppasswords as facts 
+      set_fact: 
+        MYSQL_PASS: "{{output.results[0].json.data.value}}" 
+        NOVA_DBPASS:   "{{output.results[1].json.data.value}}" 
+        NOVA_PASS:   "{{output.results[2].json.data.value}}" 
+        KEYSTONE_ADMIN_PASS: "{{output.results[3].json.data.value}}"    
+        RABBIT_PASS: "{{output.results[4].json.data.value}}"   
+        PLACEMENT_PASS: "{{output.results[5].json.data.value}}"   
+        METADATA_SECRET: "{{output.results[6].json.data.value}}"   
+        NEUTRON_PASS: "{{output.results[7].json.data.value}}"   
+        
+- name:  Setup mysql pre-req for nova  
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Create a new nova databases nova_api, nova, nova_cell0
+      mysql_db:
+        name: "{{item}}"
+        login_user: root 
+        login_password: "{{MYSQL_PASS}}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock 
+        state: present
+      with_items:
+        - nova_api
+        - nova
+        - nova_cell0
+
+      
+    - name: Create nova dbuser with password, grant on nova_api 
+      mysql_user:
+        state: present
+        name: nova
+        password: "{{NOVA_DBPASS}}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock 
+        login_user: root
+        login_password: "{{MYSQL_PASS}}"
+        host: "{{item.host}}"
+        append_privs: yes
+        priv:  
+          "{{item.priv}}"
+      with_items:
+        - {host: 'localhost', priv: "nova_api.*:ALL,GRANT"}
+        - {host: '%', priv: "nova_api.*:ALL,GRANT"}
+        - {host: 'localhost', priv: "nova.*:ALL,GRANT"}
+        - {host: '%', priv: "nova.*:ALL,GRANT"}
+        - {host: 'localhost', priv: "nova_cell0.*:ALL,GRANT"}
+        - {host: '%', priv: "nova_cell0.*:ALL,GRANT"}
+      no_log: true
+    
+
+
+- name: Create nova user and it project
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+
+  vars:
+    os_env:
+      OS_USERNAME: admin
+      OS_PASSWORD: "{{KEYSTONE_ADMIN_PASS}}"
+      OS_PROJECT_NAME: admin
+      OS_USER_DOMAIN_NAME: Default
+      OS_PROJECT_DOMAIN_NAME: Default
+      OS_AUTH_URL: http://controller:5000/v3
+      OS_IDENTITY_API_VERSION: 3
+
+  tasks:
+    - name: Create nova user 
+      os_user:
+        state: present
+        name: nova
+        password: "{{NOVA_PASS}}" 
+        domain: default 
+      environment: "{{ os_env }}"
+      no_log: true
+    - name: assign nova admin role 
+      os_user_role: 
+        user: nova
+        role: admin
+        project: service
+      environment: "{{ os_env }}"
+
+    - name: Create service entity for nova  
+      os_keystone_service: 
+        state: present
+        name: nova
+        service_type: compute
+        description: "OpenStack Compute"
+
+      environment: "{{ os_env }}"
+
+    - name: Create a PUBLIC,INTERNAL,ADMIN service endpoints for compute
+      openstack.cloud.endpoint: 
+        service: nova
+        endpoint_interface: "{{item}}"
+        url: http://controller:8774/v2.1
+        region: RegionOne
+        state: present
+      with_items:
+        - public
+        - internal
+        - admin
+      environment: "{{ os_env }}"
+
+
+- name: Install and configure nova compute components 
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+  tasks: 
+    - name: Install nova packages
+      apt:
+        name: 
+          - nova-api
+          - nova-conductor
+          - nova-novncproxy 
+          - nova-scheduler
+        state: present 
+      
+
+
+    - name: Configure   /etc/nova/nova.conf
+      template:
+        src: "{{ playbook_dir }}/configs/templates/nova.conf.j2"
+        dest: "/etc/nova/nova.conf"
+        mode: '0640'
+    - name: Create libvirt group
+      group:
+        name: libvirt
+        state: present
+        system: yes
+    - name: Create system user "libvirt"  and libvirt group
+      user:
+        name: libvirt 
+        groups: [ libvirt] 
+        system: yes
+
+    - name: Create system user "nova"  and nova group
+      user:
+        name: nova 
+        groups: [nova,libvirt] 
+        system: yes
+
+    - name: Populate the nova-api database
+      shell: 'su -s /bin/sh -c "nova-manage api_db sync" nova'
+
+    - name: Populate the cell0 database
+      shell: 'su -s /bin/sh -c "nova-manage cell_v2 map_cell0" nova'
+
+    - name: Create the cell1 cell
+      shell: 'su -s /bin/sh -c "nova-manage cell_v2 create_cell --name=cell1 --verbose" nova' 
+      ignore_errors: yes 
+    - name: Populate the nova database
+      shell: 'su -s /bin/sh -c "nova-manage db sync" nova' 
+
+    - name: Verify nova cell0 and cell1 are registered correctly
+      shell: 'su -s /bin/sh -c "nova-manage cell_v2 list_cells" nova' 
+      register: out 
+    
+    - debug:  msg="{{out.stdout}}"
+
+    - name: Restart the Compute services
+      systemd:
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+        name: "{{item}}"
+      with_items:
+        - nova-api
+        - nova-scheduler
+        - nova-conductor
+        - nova-novncproxy
+
+ 

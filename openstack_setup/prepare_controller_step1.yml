@@ -1,0 +1,102 @@
+- name: Setup base controller network
+  hosts: controller
+  become: true
+  gather_facts: no
+  tasks: 
+    - name: Copy controller network interface configuration
+      
+      copy:
+        src: "{{playbook_dir}}/configs/bastion-base-netplan.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/netplan/bastion-base-netplan.yaml"
+        owner: root
+        group: root
+        mode: '0644' 
+      
+      
+
+    - name: Install iptables-persistent and dnsmasq
+      apt:
+        name: 
+          - iptables-persistent
+          - dnsmasq
+          - openvswitch-switch
+        state: present 
+    - name: netplan apply 
+      command: netplan --debug apply 
+
+
+    - name: Copy dnsmasq /etc/dnsmasq.conf
+      copy:
+        src: "{{playbook_dir}}/configs/dnsmasq.conf"  
+        dest: "/etc/dnsmasq.conf"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: dnsmasq
+      service:
+        name: dnsmasq
+        state: restarted
+        enabled: yes
+
+    - name: Allow nucs to connect to the internet
+      command:  iptables -t nat -A  POSTROUTING -o eth0 -j MASQUERADE
+
+    - name: Enable packet forwarding
+      lineinfile:
+        path: /etc/sysctl.conf
+        regexp: '^net.ipv4.ip_forward=1' # only add if it doesnt exi
+        line: 'net.ipv4.ip_forward=1'
+    - name: Activate forwarding now
+      command:  sysctl -w net.ipv4.ip_forward=1
+
+    - name: Save iptable rules
+      shell: "iptables-save > /etc/iptables/rules.v4"
+
+    - name: Add ips to host file
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^{{item}}' # only add if it doesnt exi
+        line: '{{item}}'
+      with_items:
+        - '10.0.0.11 controller'
+
+        
+- name: Stand up nginx 
+  hosts: controller
+  become: true 
+ 
+  tasks:
+    - name: NGINX | Installing NGINX
+      package: name=nginx state=present
+       
+      tags:
+        - ng  
+
+    - name: Creates directory /var/log/ngnix/
+      file:
+        path: /var/log/ngnix/
+        state: directory
+        mode: 0775
+        recurse: yes
+      tags:
+        - ng   
+  
+
+    - name: Copy nginx configuration in place.
+      template:
+        src: "{{playbook_dir}}/configs/nginx.conf"  
+        dest: "/etc/nginx/nginx.conf"
+        owner: root
+        group: root
+        mode: 0644
+     
+      tags:
+        - ng  
+    - name: nginx
+      service:
+        name: nginx
+        state: restarted
+        enabled: yes
+      tags:
+        - ng  

@@ -1,0 +1,43 @@
+
+---
+ 
+- name: Setup compute network
+  hosts: compute
+  remote_user: "jibin"
+  become: true
+  tasks: 
+    - name: Copy compute network interface configuration  
+      copy:
+        src: "{{playbook_dir}}/configs/{{inventory_hostname}}-netplan.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/netplan/00-installer-config.yaml"
+        owner: root
+        group: root
+        mode: '0644' 
+      
+      
+    - name: netplan apply
+      become: true 
+      command: netplan --debug apply 
+
+    - name: Test if interface is up - 10.0.0.32 and 10.0.0.31 (runs ping from all nodes)
+      command: ping -w 1 {{item}}
+      with_items: 
+        - 10.0.0.32
+        - 10.0.0.31 
+    - name: Add ips to host file
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^{{item}}' # only add if it doesnt exi
+        line: '{{item}}'
+      with_items:
+        - '10.0.0.32 compute2'
+        - '10.0.0.31 compute1'
+        - '10.0.0.41 block1'
+        - '10.0.0.51 object1'
+        - '10.0.0.11 controller'
+- name: Install common components
+  hosts: compute
+  remote_user: "jibin"
+  become: true 
+  roles:
+    - common-components

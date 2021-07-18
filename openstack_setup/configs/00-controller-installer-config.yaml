@@ -1,0 +1,11 @@
+network:
+  renderer: networkd
+
+  ethernets:
+   
+    eth0:
+      addresses: 
+        - 10.0.0.11/32 # controller ip 
+ 
+      dhcp4: true
+  version: 2

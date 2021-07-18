@@ -1,0 +1,50 @@
+
+- name: Pre-req
+  hosts: controller
+  remote_user: "jibin"
+  become: true # needs become true for retrieving secrets otherwise" unable to get local issuer certificate "
+  tasks:
+    - include_vars:  dir=vars 
+
+    - name: Fail if vault_token not set
+      fail: msg="This play requires vault_token use --extra  --extra-vars 'vault_token=<token>'" 
+      when: vault_token is not defined 
+    - name: Retrieving secrets  from vault
+      uri:
+        url: "{{vault_addr}}{{item}}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{vault_token}}"
+
+      with_items:
+        - /v1/kv/openstack-deploy/KEYSTONE_ADMIN_PASS   
+      register: output
+
+    - name: Set KEYSTONE_ADMIN_PASS
+      set_fact:  
+        KEYSTONE_ADMIN_PASS:   "{{output.results[0].json.data.value}}"  
+
+- name: Verify network agesnts 
+  hosts: controller
+  remote_user: "jibin"
+  become: true 
+
+  vars:
+    os_env:
+      OS_USERNAME: admin
+      OS_PASSWORD: "{{KEYSTONE_ADMIN_PASS}}"
+      OS_PROJECT_NAME: admin
+      OS_USER_DOMAIN_NAME: Default
+      OS_PROJECT_DOMAIN_NAME: Default
+      OS_AUTH_URL: http://controller:5000/v3
+      OS_IDENTITY_API_VERSION: 3
+
+  tasks:
+    - name: List agents to verify successful launch of the neutron agents
+      command: openstack network agent list
+      environment: "{{ os_env }}"
+      register: output
+
+    - name: Should have 4 agents on controller and 1 agent on each compute node
+      debug:
+        msg: "{{output}}"
