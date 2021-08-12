@@ -1,7 +1,7 @@
 # Openstack-Homelab 
  
 
-This is an Openstack deployment on a couple of [NUCs](https://www.intel.com/content/www/us/en/products/details/nuc/mini-pcs.html) and an old Dell Inspiron laptop. 
+An Openstack deployment on a couple of [NUCs](https://www.intel.com/content/www/us/en/products/details/nuc/mini-pcs.html) and an old Dell Inspiron laptop. 
  
 
 ## TLDR 
