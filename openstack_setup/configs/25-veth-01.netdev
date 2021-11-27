@@ -1,0 +1,5 @@
+[NetDev]
+Name=veth0-openstack
+Kind=veth
+[Peer]
+Name=veth1-ovs

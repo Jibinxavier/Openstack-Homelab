@@ -63,16 +63,16 @@
         - 10.0.0.11 
    
     
-    - name: Add ips to host file
-      lineinfile:
-        path: /etc/hosts
-        regexp: '^{{item}}' # only add if it doesnt exi
-        line: '{{item}}'
-      with_items:
-        - '10.0.0.11 controller'
-        - '10.0.0.31 compute1'
-        - '10.0.0.41 block1'
-        - '10.0.0.51 object1'
+    # - name: Add ips to host file
+    #   lineinfile:
+    #     path: /etc/hosts
+    #     regexp: '^{{item}}' # only add if it doesnt exi
+    #     line: '{{item}}'
+    #   with_items:
+    #     - '10.0.0.11 controller'
+    #     - '10.0.0.31 compute1'
+    #     - '10.0.0.41 block1'
+    #     - '10.0.0.51 object1'
 
     
 

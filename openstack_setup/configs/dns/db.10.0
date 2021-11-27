@@ -1,0 +1,19 @@
+; reverse lookup
+$TTL    604800
+@       IN      SOA     ns1.openstack.lab. admin.openstack.lab. (
+                        2021111501      ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+; name servers - NS records
+    IN      NS      ns1.openstack.lab.
+
+
+; PTR Records
+0.11   IN      PTR     ns1.openstack.lab.    ; 10.0.0.11
+0.11   IN      PTR     controller.openstack.lab.  ; 10.0.0.11
+0.31   IN      PTR     node1.openstack.lab.  ;10.0.0.31
+0.32   IN      PTR     node2.openstack.lab.  ;10.0.0.32
+0.33   IN      PTR     node3.openstack.lab.  ;10.0.0.33

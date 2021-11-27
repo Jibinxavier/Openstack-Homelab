@@ -1,0 +1,36 @@
+network:
+  renderer: networkd
+  version: 2
+
+  ethernets:
+    eth0:
+      dhcp4: true
+      optional: true
+      nameservers:
+        addresses: [10.0.0.11,8.8.8.8,8.8.4.4]
+        search: [openstack.lab]
+      match:
+        macaddress: d4:be:d9:80:2b:b6
+      set-name: eth0
+    
+    enx806d970aeb89: {} # only need the following as its connected to switch
+ 
+  bridges:
+    ovs0:
+        addresses: [192.168.9.1/24]
+        interfaces: [enx806d970aeb89]
+        openvswitch: {} # this is an OVS port
+        routes:
+          # route to openstack computes
+          - to: 10.0.0.31
+            via: 192.168.9.1
+            scope: link
+           # route to openstack computes
+          - to: 10.0.0.32
+            via: 192.168.9.1
+            scope: link
+          # route to openstack computes
+          - to: 10.0.0.33
+            via: 192.168.9.1
+            scope: link
+

@@ -1,0 +1,18 @@
+
+network:
+  renderer: networkd
+
+  ethernets:
+   
+    dummy0:
+      routes:
+            # route to openstack computes
+            - to: 10.0.0.31
+              via: 192.168.9.1
+           
+             # route to openstack computes
+            - to: 10.0.0.32
+              via: 192.168.9.1
+              
+  version: 2
+

@@ -9,7 +9,7 @@ network:
         - 10.0.0.31/24 # compute ip, this setup will have compute ip too
       dhcp4: true
       nameservers: 
-        addresses: [8.8.8.8]
-    
+        addresses: [10.0.0.11]
+        search: [openstack.lab]
   version: 2
 

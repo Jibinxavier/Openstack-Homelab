@@ -20,7 +20,7 @@
     - name: CA- Generate an OpenSSL private key with the default values (4096 bits, RSA)
       openssl_privatekey:
         path: "{{playbook_dir}}/configs/certs/ca.pem"
-        force: true
+        #force: true
     - name:  CA- Generate an OpenSSL Certificate Signing Request  
       openssl_csr:
         path:  "{{playbook_dir}}/configs/certs/ca.csr"
@@ -32,7 +32,7 @@
           - 'Certificate Sign'
           - 'CRL Sign'
       
-        force: true
+        #force: true
     - name: CA - Generate a Self Signed CA OpenSSL certificate
       openssl_certificate:
         path:  "{{playbook_dir}}/configs/certs/ca.crt"
@@ -40,11 +40,11 @@
         csr_path:  "{{playbook_dir}}/configs/certs/ca.csr"
         provider: selfsigned
         
-        force: true
+        #force: true
     - name: Vault- Generate an OpenSSL private key(4096 bits, RSA)
       openssl_privatekey:
         path: "{{playbook_dir}}/configs/certs/vault.pem"
-        force: true
+        #force: true
         
 
     - name:  Vault- Generate an OpenSSL Certificate Signing Request  
@@ -55,7 +55,7 @@
         path: "{{playbook_dir}}/configs/certs/vault.csr"
         privatekey_path: "{{playbook_dir}}/configs/certs/vault.pem"
         common_name: vault 
-        subject_alt_name: "IP:127.0.0.1,IP:192.168.9.1,{{subj_alt_name}}"
+        subject_alt_name: "IP:127.0.0.1,IP:192.168.9.1,{{subj_alt_name}},DNS:controller,DNS:controller.openstack.lab"
         basicConstraints: 'CA:FALSE'
         key_usage:
           - 'Digital Signature'
@@ -63,7 +63,7 @@
         extended_key_usage:
           - 'TLS Web Server Authentication'
           - 'TLS Web Client Authentication'
-        force: true
+        #force: true
         
     - name: Vault - Generate a cert using own CA
       openssl_certificate:
@@ -72,7 +72,7 @@
         ownca_path:   "{{playbook_dir}}/configs/certs/ca.crt"
         ownca_privatekey_path: "{{playbook_dir}}/configs/certs/ca.pem"
         provider: ownca 
-        force: true
+        #force: true
    
     - name: verify certs 
       shell: "openssl verify -CAfile {{playbook_dir}}/configs/certs/ca.crt {{playbook_dir}}/configs/certs/vault.crt "

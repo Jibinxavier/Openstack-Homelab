@@ -4,13 +4,13 @@ network:
 
   ethernets:
    
-    eno1:
+    enx000ec6d1a194:
       addresses:  
-        - 10.0.0.32/24 # compute ip, this setup will have compute ip too 
-        - 10.0.0.41/24 # block storage
+        - 10.0.0.33/24 # compute ip, this setup will have compute ip too 
       dhcp4: true
       nameservers: 
         addresses: [10.0.0.11]
         search: [openstack.lab]
+        
   version: 2
 

@@ -2,17 +2,40 @@
   hosts: controller
   become: true
   gather_facts: no
+  
+  roles:
+    - dns
+
   tasks: 
     - name: Copy controller network interface configuration
       
       copy:
-        src: "{{playbook_dir}}/configs/bastion-base-netplan.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
-        dest: "/etc/netplan/bastion-base-netplan.yaml"
+        src: "{{playbook_dir}}/configs/01-bastion-base-netplan.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/netplan/01-bastion-base-netplan.yaml"
+        owner: root
+        group: root
+        mode: '0644' 
+
+    - name: Copy veth configuration to systemd
+      
+      copy:
+        src: "{{playbook_dir}}/configs/25-veth-01.netdev" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/systemd/network/25-veth-01.netdev"
         owner: root
         group: root
         mode: '0644' 
       
       
+    - name: Copy veth network interface configuration
+      
+      copy:
+        src: "{{playbook_dir}}/configs/02-bastion-veth.yaml" # link to ansible special variables https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+        dest: "/etc/netplan/02-bastion-veth.yaml"
+        owner: root
+        group: root
+        mode: '0644' 
+      
+            
 
     - name: Install iptables-persistent and dnsmasq
       apt:
@@ -21,6 +44,7 @@
           - dnsmasq
           - openvswitch-switch
         state: present 
+    
     - name: netplan apply 
       command: netplan --debug apply 
 
@@ -53,13 +77,13 @@
     - name: Save iptable rules
       shell: "iptables-save > /etc/iptables/rules.v4"
 
-    - name: Add ips to host file
-      lineinfile:
-        path: /etc/hosts
-        regexp: '^{{item}}' # only add if it doesnt exi
-        line: '{{item}}'
-      with_items:
-        - '10.0.0.11 controller'
+    # - name: Add ips to host file
+    #   lineinfile:
+    #     path: /etc/hosts
+    #     regexp: '^{{item}}' # only add if it doesnt exi
+    #     line: '{{item}}'
+    #   with_items:
+    #     - '10.0.0.11 controller'
 
         
 - name: Stand up nginx 
